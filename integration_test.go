@@ -90,18 +90,31 @@ func setup() error {
 	// Find Mapped Port
 	log.Println("Finding mapped SSH port...")
 	portCmd := exec.Command("docker", "port", containerID, "22/tcp")
-	portBytes, err := portCmd.CombinedOutput()
+	portOut, err := portCmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to get mapped port for container %s: %w\nOutput: %s", containerID, err, string(portBytes))
+		return fmt.Errorf("failed to get mapped port for container %s: %w", containerID, err)
 	}
-	// Output looks like: 0.0.0.0:PORT
-	portAddr := strings.TrimSpace(string(portBytes))
-	parts := strings.Split(portAddr, ":")
+
+	// Handle potential dual IPv4/IPv6 output like:
+	// 0.0.0.0:32768
+	// [::]:32768
+	// We only need the port number, which should be the same.
+	portMapping := strings.TrimSpace(string(portOut))
+	lines := strings.Split(portMapping, "\n")
+	if len(lines) == 0 {
+		return fmt.Errorf("empty output from docker port: %q", portMapping)
+	}
+
+	// Parse the port from the first line
+	firstLine := strings.TrimSpace(lines[0])
+	parts := strings.Split(firstLine, ":")
 	if len(parts) != 2 {
-		return fmt.Errorf("unexpected output from docker port: %s", portAddr)
+		return fmt.Errorf("unexpected format in first line of docker port output: %q", firstLine)
 	}
-	sshHostPort = "localhost:" + parts[1] // Use localhost for connection
-	log.Printf("SSH server available at %s", sshHostPort)
+	port := parts[1]
+
+	sshHostPort = "localhost:" + port
+	log.Printf("SSH server available at %s (parsed from %q)", sshHostPort, firstLine)
 
 	// Build sshx binary for testing
 	log.Println("Building sshx binary for tests...")
