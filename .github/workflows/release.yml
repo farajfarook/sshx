@@ -34,6 +34,7 @@ jobs:
       #   run: go test -v ./...
 
       - name: Build Release Binary for ${{ matrix.target }}
+        id: build_binary
         run: |
           # Extract GOOS and GOARCH from matrix target
           IFS='/' read -r GOOS GOARCH <<< "${{ matrix.target }}"
@@ -49,12 +50,14 @@ jobs:
           env GOOS=$GOOS GOARCH=$GOARCH go build -v -ldflags="$LDFLAGS" -o "$OUTPUT_NAME" .
           # List created file
           ls -l "$OUTPUT_NAME"
+          # Output the filename for the next step
+          echo "output_name=$OUTPUT_NAME" >> $GITHUB_OUTPUT
 
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
           name: sshx-build-${{ matrix.target }} # Unique name per target
-          path: sshx-${{ matrix.target }}* # Upload the specific binary built
+          path: ${{ steps.build_binary.outputs.output_name }} # Use output from previous step
           if-no-files-found: error # Error if the build didn't produce the expected file
           retention-days: 1 # Keep artifacts only briefly
 
@@ -110,3 +113,6 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           # Allow updates if release already exists (e.g., from a failed run)
           allowUpdates: true
+
+      - name: Output Release URL
+        run: echo "Release URL: ${{ steps.create_release.outputs.html_url }}"
