@@ -40,7 +40,8 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          OUTPUT_NAME="sshx-${GOOS}-${GOARCH}"
+          # Set output name to sshx or sshx.exe
+          OUTPUT_NAME="sshx"
           if [ "${GOOS}" == "windows" ]; then
             OUTPUT_NAME="${OUTPUT_NAME}.exe"
           fi
@@ -51,8 +52,9 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sshx-build-${{ matrix.goos }}-${{ matrix.goarch }} # Unique artifact name per build
-          path: sshx-${{ matrix.goos }}-${{ matrix.goarch }}* # Upload the binary (include .exe)
+          name: sshx-build-${{ matrix.goos }}-${{ matrix.goarch }} # Keep unique artifact name per build
+          # Upload the plain sshx or sshx.exe file
+          path: sshx*
           retention-days: 1 # Keep artifacts for 1 day
 
   release:
@@ -73,9 +75,12 @@ jobs:
         id: create_release # Give the step an ID to reference its outputs
         uses: ncipollo/release-action@v1
         with:
-          # Define which files to upload from the downloaded artifacts directory
-          # The structure will be artifacts/sshx-build-<os>-<arch>/<binary-file>
-          artifacts: artifacts/sshx-build-*/*
+          # Explicitly list downloaded artifacts and rename them for the release page
+          # Format: path/to/downloaded/file:DesiredAssetName
+          artifacts: |
+            artifacts/sshx-build-linux-amd64/sshx:sshx
+            artifacts/sshx-build-darwin-amd64/sshx:sshx
+            artifacts/sshx-build-windows-amd64/sshx.exe:sshx.exe
           token: ${{ secrets.GITHUB_TOKEN }}
           # Automatically mark as pre-release if tag contains a hyphen
           prerelease: contains(github.ref, '-')
