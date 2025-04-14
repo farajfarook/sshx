@@ -81,22 +81,13 @@ jobs:
         run: ls -R artifacts
 
       - name: Create GitHub Release
-        id: create_release # Give the step an ID to reference its outputs
+        id: create_release
         uses: ncipollo/release-action@v1
         with:
-          # Explicitly list downloaded artifacts and rename them for the release page
-          # Format: path/to/downloaded/file:DesiredAssetName
-          artifacts: |
-            artifacts/sshx-build-linux-amd64/sshx:sshx
-            artifacts/sshx-build-darwin-amd64/sshx:sshx
-            artifacts/sshx-build-windows-amd64/sshx.exe:sshx.exe
+          # Use a simpler glob pattern to find all downloaded artifacts
+          artifacts: artifacts/*/*
           token: ${{ secrets.GITHUB_TOKEN }}
-          # Automatically mark as pre-release if tag contains a hyphen
           prerelease: contains(github.ref, '-')
-          # Optional: Customize release name, body etc.
-          # releaseName: "Release ${{ github.ref_name }}"
-          # body: "See CHANGELOG.md for details."
-          # draft: false
 
       - name: Output Release URL
         run: |
