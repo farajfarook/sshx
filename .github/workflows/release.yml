@@ -1,0 +1,82 @@
+# .github/workflows/release.yml
+
+name: Release Build and Upload
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # Trigger on tags like v1.0.0, v1.2.3
+
+permissions:
+  contents: write # Allow creating releases and uploading assets
+
+jobs:
+  build:
+    name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64]
+        # Add other GOOS/GOARCH combinations if needed, e.g., arm64
+        # goos: [linux, windows, darwin, linux]
+        # goarch: [amd64, amd64, amd64, arm64]
+        # include:
+        #   - goos: darwin
+        #     goarch: arm64 # For Apple Silicon Macs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21' # Specify your Go version, ideally match go.mod
+
+      - name: Build sshx binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          OUTPUT_NAME="sshx-${GOOS}-${GOARCH}"
+          if [ "${GOOS}" == "windows" ]; then
+            OUTPUT_NAME="${OUTPUT_NAME}.exe"
+          fi
+          echo "Building $OUTPUT_NAME..."
+          go build -v -o "${OUTPUT_NAME}" .
+          ls -l # Verify file exists
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sshx-build-${{ matrix.goos }}-${{ matrix.goarch }} # Unique artifact name per build
+          path: sshx-${{ matrix.goos }}-${{ matrix.goarch }}* # Upload the binary (include .exe)
+          retention-days: 1 # Keep artifacts for 1 day
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build # Run after all builds are finished
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts # Download all artifacts into an 'artifacts' directory
+          # The artifacts will be in subdirectories named after the upload name
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          # Define which files to upload from the downloaded artifacts directory
+          # The structure will be artifacts/sshx-build-<os>-<arch>/<binary-file>
+          artifacts: artifacts/sshx-build-*/*
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: Customize release name, body, mark as pre-release etc.
+          # releaseName: "Release ${{ github.ref_name }}"
+          # body: "See CHANGELOG.md for details."
+          # prerelease: contains(github.ref, '-rc')
+          # draft: false 
