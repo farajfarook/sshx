@@ -116,4 +116,4 @@ jobs:
           allowUpdates: true
 
       - name: Output Release URL
-        run: echo "Release URL: ${{ steps.create_release.outputs.html_url }}" 
+        run: echo "Release URL: TEST" # Temporarily simplified 
