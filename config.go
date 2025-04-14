@@ -65,11 +65,10 @@ func loadSshConfig() (*ssh_config.Config, error) {
 func ResolveConnectionConfig(targetArg string, identityFilePathFlag string) (*ResolvedConfig, error) {
 	cfg, err := loadSshConfig()
 	if err != nil {
-		// loadSshConfig logs warnings for non-fatal issues like file not found
-		return nil, err // Return fatal errors (permissions, parse errors)
+		return nil, err
 	}
 
-	currentUser, err := user.Current() // Needed for default username
+	currentUser, err := user.Current()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current user: %w", err)
 	}
@@ -82,7 +81,7 @@ func ResolveConnectionConfig(targetArg string, identityFilePathFlag string) (*Re
 		res.IsAlias = false
 		log.Printf("Parsing target as user@host[:port]: %s", targetArg)
 		parts := strings.SplitN(targetArg, "@", 2)
-		if len(parts) != 2 {
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 			return nil, fmt.Errorf("invalid user@host format: %s", targetArg)
 		}
 		sshUser = parts[0]
@@ -99,9 +98,17 @@ func ResolveConnectionConfig(targetArg string, identityFilePathFlag string) (*Re
 		} else {
 			hostname = host
 			portStr = port
+			_, err = strconv.Atoi(portStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid port number '%s' in target '%s'", portStr, targetArg)
+			}
 		}
-		// Check config for IdentityFile for the literal hostname
-		keyPathFromConfig, _ = cfg.Get(hostname, "IdentityFile") // Ignore error
+
+		if hostname == "" {
+			return nil, fmt.Errorf("could not determine hostname from target: %s", targetArg)
+		}
+
+		keyPathFromConfig, _ = cfg.Get(hostname, "IdentityFile")
 
 	} else {
 		res.IsAlias = true
@@ -124,7 +131,7 @@ func ResolveConnectionConfig(targetArg string, identityFilePathFlag string) (*Re
 		if err != nil {
 			return nil, fmt.Errorf("invalid Port '%s' found in SSH config for host '%s': %w", portStr, hostAlias, err)
 		}
-		keyPathFromConfig, _ = cfg.Get(hostAlias, "IdentityFile") // Ignore error
+		keyPathFromConfig, _ = cfg.Get(hostAlias, "IdentityFile")
 	}
 
 	res.Hostname = hostname
@@ -132,13 +139,12 @@ func ResolveConnectionConfig(targetArg string, identityFilePathFlag string) (*Re
 	res.Port = portStr
 	res.ServerAddress = net.JoinHostPort(res.Hostname, res.Port)
 
-	// Determine final IdentityFile path (Flag > Config > Default)
-	finalKeyPath := identityFilePathFlag // Priority 1: -i flag
+	finalKeyPath := identityFilePathFlag
 	if finalKeyPath == "" {
-		finalKeyPath = keyPathFromConfig // Priority 2: Config file
+		finalKeyPath = keyPathFromConfig
 	}
 	if finalKeyPath == "" {
-		finalKeyPath = "~/.ssh/id_rsa" // Priority 3: Default
+		finalKeyPath = "~/.ssh/id_rsa"
 	}
 
 	expandedKeyPath, err := expandTilde(finalKeyPath)
