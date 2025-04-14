@@ -1,33 +1,15 @@
 # .github/workflows/release.yml
 
-name: Build, Test, and Release
+name: Release
 
 on:
   push:
-    branches:
-      - main  # Trigger on pushes to the main branch
     tags:
-      - 'v*.*.*'      # Trigger on standard tags like v1.0.0
-      - 'v*.*.*-*'    # Trigger on pre-release tags like v1.0.0-beta.1
-
-permissions:
-  contents: write # Allow creating releases and uploading assets
+      - 'v*' # Trigger only when tags starting with 'v' are pushed
 
 jobs:
-  build:
-    name: Build & Test for ${{ matrix.goos }}/${{ matrix.goarch }}
+  test-and-build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        goos: [linux, windows, darwin]
-        goarch: [amd64]
-        # Add other GOOS/GOARCH combinations if needed, e.g., arm64
-        # goos: [linux, windows, darwin, linux]
-        # goarch: [amd64, amd64, amd64, arm64]
-        # include:
-        #   - goos: darwin
-        #     goarch: arm64 # For Apple Silicon Macs
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -35,58 +17,52 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21' # Specify your Go version, ideally match go.mod
+          go-version: '1.21' # Match the Go version in your go.mod if different
 
-      - name: Run unit tests
+      # Cache Go modules like in ci.yml
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Run Unit Tests
         run: go test -v ./...
 
-      - name: Build sshx binary
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          # Set output name back to include OS and Arch
-          OUTPUT_NAME="sshx-${GOOS}-${GOARCH}"
-          if [ "${GOOS}" == "windows" ]; then
-            OUTPUT_NAME="${OUTPUT_NAME}.exe"
-          fi
-          echo "Building $OUTPUT_NAME..."
-          go build -v -o "${OUTPUT_NAME}" .
-          ls -l
+      - name: Run Integration Tests
+        run: go test -tags integration -v ./...
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sshx-build-${{ matrix.goos }}-${{ matrix.goarch }} # Keep unique artifact name
-          # Upload the file named sshx-os-arch(.exe)
-          path: sshx-${{ matrix.goos }}-${{ matrix.goarch }}*
-          retention-days: 1
+      # --- Release Steps Below (only runs if tests above pass) ---
 
-  release:
-    # Add condition to only run this job for tag pushes
-    if: startsWith(github.ref, 'refs/tags/')
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    needs: build # Run after all builds are finished
-    steps:
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts # Download all artifacts into an 'artifacts' directory
-          # The artifacts will be in subdirectories named after the upload name
-
-      - name: Display structure of downloaded files
-        run: ls -R artifacts
+      - name: Build Release Artifacts
+        run: echo "Building release artifacts... (Replace with actual build commands)"
 
       - name: Create GitHub Release
         id: create_release
-        uses: ncipollo/release-action@v1
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Use the simple glob pattern - it will now find files named sshx-os-arch(.exe)
-          artifacts: artifacts/*/*
-          token: ${{ secrets.GITHUB_TOKEN }}
-          prerelease: contains(github.ref, '-')
+          tag_name: ${{ github.ref_name }} # Gets the tag name (e.g., v0.2.0-beta)
+          release_name: Release ${{ github.ref_name }}
+          body: |
+            Automated release for tag ${{ github.ref_name }}
+            *(Release notes should ideally be generated or added here)*
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }} # Mark as pre-release if tag contains -beta or -rc
 
-      - name: Output Release URL
-        run: |
-          echo "Release URL: ${{ steps.create_release.outputs.html_url }}" 
+      # Example Upload Step (Uncomment and modify when you have artifacts)
+      # - name: Upload Release Artifacts
+      #   uses: actions/upload-release-asset@v1
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   with:
+      #     upload_url: ${{ steps.create_release.outputs.upload_url }}
+      #     asset_path: ./path/to/your/artifact # Replace with actual artifact path
+      #     asset_name: name-of-your-artifact # Replace with desired artifact name
+      #     asset_content_type: application/octet-stream # Or specific type 
