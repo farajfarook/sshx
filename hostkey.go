@@ -96,7 +96,7 @@ func CreateInteractiveHostKeyCallback() (ssh.HostKeyCallback, string, error) {
 				log.Printf("Someone could be eavesdropping on you right now (man-in-the-middle attack)!")
 				log.Printf("It is also possible that a host key has just been changed.")
 				log.Printf("The fingerprint for the %s key sent by the remote host %s is:", key.Type(), hostname)
-				log.Printf(fingerprintSHA256(key))
+				log.Printf("%s", fingerprintSHA256(key))
 				log.Printf("Please contact your system administrator.")
 				log.Printf("Add correct host key in %s to get rid of this message.", knownHostsPath)
 				for _, k := range keyErr.Want {

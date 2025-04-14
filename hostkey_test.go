@@ -10,7 +10,8 @@ func TestFingerprintSHA256(t *testing.T) {
 	// Example Ed25519 public key string (key part only)
 	// Corresponds to: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK20d1cvXrMmoaY11aXk927q/LeQ1L87X/+40UqYpNuP user@example
 	keyStr := "AAAAC3NzaC1lZDI1NTE5AAAAIK20d1cvXrMmoaY11aXk927q/LeQ1L87X/+40UqYpNuP"
-	expectedFingerprint := "SHA256:OwaVjCRtY4tWSZZ0L+nNn2+7L+o4zCE4oQZQo7W0Iss" // Pre-calculated fingerprint
+	// Update expected fingerprint based on ssh-keygen output
+	expectedFingerprint := "SHA256:VD/FNwL5igu5vcxERTmvUgQfufY1/xzPnq451ZEOWAs"
 
 	// Parse the public key
 	// Note: ssh.ParsePublicKey requires the full line format (type key comment),
