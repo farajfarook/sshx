@@ -11,6 +11,10 @@ An interactive SSH client written in Go using the `golang.org/x/crypto/ssh` pack
     *   Attempts Public Key authentication first (using key from `-i` flag, `IdentityFile` in config, or default `~/.ssh/id_rsa`).
     *   Supports passphrase-protected keys.
     *   Falls back to interactive Password authentication if key auth is unavailable or fails.
+*   **Host Key Verification:** 
+    *   Verifies the remote server's host key against the user's `~/.ssh/known_hosts` file.
+    *   Prompts the user interactively (yes/no) to add the key if the host is unknown.
+    *   Detects and warns about host key mismatches (potential Man-in-the-Middle attacks).
 *   **Cross-Platform Builds:** Includes a GitHub Actions workflow (`.github/workflows/release.yml`) to automatically build binaries for Linux, macOS, and Windows upon tagging a release (e.g., `v1.0.0`).
 
 ## Build
@@ -46,16 +50,26 @@ Ensure you have Go installed and configured (version specified in `go.mod`).
 ./sshx -i C:\Keys\special.pem john.doe@192.168.1.100 
 ```
 
-The client will attempt public key authentication using the resolved key. If the key requires a passphrase, it will prompt for it. If key authentication is not possible or fails, it will prompt for the user's password.
+The client performs authentication and host key verification:
+*   **Host Key:** Checks `~/.ssh/known_hosts`. If the host is unknown, it displays the key fingerprint and prompts for confirmation before adding it. If the key has changed, it aborts with a warning.
+*   **Authentication:** Attempts public key authentication using the resolved key. If the key requires a passphrase, it prompts for it. If key authentication is not possible or fails, it falls back to prompting for the user's password.
 
 ## Automated Releases
 
-This repository uses GitHub Actions to build binaries for Linux (amd64), macOS (amd64), and Windows (amd64) whenever a Git tag matching `v*.*.*` is pushed. These binaries are automatically attached to a GitHub Release corresponding to the tag.
+This repository uses GitHub Actions to build binaries for Linux (amd64), macOS (amd64), and Windows (amd64) whenever a Git tag matching `v*.*.*` or `v*.*.*-*` (for pre-releases) is pushed. These binaries are automatically attached to a GitHub Release corresponding to the tag.
 
-## CRITICAL SECURITY WARNING
+## Security Considerations
 
-**This client is NOT currently production-grade due to a critical security omission:**
+*   **Host Key Verification:** This client now implements standard host key verification against `~/.ssh/known_hosts`, significantly improving security against Man-in-the-Middle attacks compared to previous versions.
+*   **Password Authentication:** While supported as a fallback, using Public Key authentication is generally recommended for better security.
+*   **Dependencies:** Review the security posture of dependencies (`golang.org/x/crypto`, `golang.org/x/term`, `github.com/kevinburke/ssh_config`).
 
-*   **Missing Host Key Verification:** The client uses `ssh.InsecureIgnoreHostKey()`. This **disables verification of the remote server's identity**, making the connection **highly vulnerable to Man-in-the-Middle (MitM) attacks**. An attacker could impersonate the server and intercept your credentials or session.
+## Automated Releases
 
-**DO NOT use this client for connecting to sensitive systems or in untrusted networks until proper host key verification (e.g., checking against a `known_hosts` file) is implemented.** 
+This repository uses GitHub Actions to build binaries for Linux (amd64), macOS (amd64), and Windows (amd64) whenever a Git tag matching `v*.*.*` or `v*.*.*-*` (for pre-releases) is pushed. These binaries are automatically attached to a GitHub Release corresponding to the tag.
+
+## Security Considerations
+
+*   **Host Key Verification:** This client now implements standard host key verification against `~/.ssh/known_hosts`, significantly improving security against Man-in-the-Middle attacks compared to previous versions.
+*   **Password Authentication:** While supported as a fallback, using Public Key authentication is generally recommended for better security.
+*   **Dependencies:** Review the security posture of dependencies (`golang.org/x/crypto`, `golang.org/x/term`, `github.com/kevinburke/ssh_config`). 
