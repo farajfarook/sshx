@@ -5,7 +5,8 @@ name: Release Build and Upload
 on:
   push:
     tags:
-      - 'v*.*.*' # Trigger on tags like v1.0.0, v1.2.3
+      - 'v*.*.*'      # Trigger on standard tags like v1.0.0
+      - 'v*.*.*-*'    # Trigger on pre-release tags like v1.0.0-beta.1
 
 permissions:
   contents: write # Allow creating releases and uploading assets
@@ -69,14 +70,19 @@ jobs:
         run: ls -R artifacts
 
       - name: Create GitHub Release
+        id: create_release # Give the step an ID to reference its outputs
         uses: ncipollo/release-action@v1
         with:
           # Define which files to upload from the downloaded artifacts directory
           # The structure will be artifacts/sshx-build-<os>-<arch>/<binary-file>
           artifacts: artifacts/sshx-build-*/*
           token: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: Customize release name, body, mark as pre-release etc.
+          # Automatically mark as pre-release if tag contains a hyphen
+          prerelease: contains(github.ref, '-')
+          # Optional: Customize release name, body etc.
           # releaseName: "Release ${{ github.ref_name }}"
           # body: "See CHANGELOG.md for details."
-          # prerelease: contains(github.ref, '-rc')
-          # draft: false 
+          # draft: false
+
+      - name: Output Release URL
+        run: echo "Release URL: ${{ steps.create_release.outputs.html_url }}" 
