@@ -43,6 +43,9 @@ jobs:
           if [ "$GOOS" == "windows" ]; then
             OUTPUT_NAME+=".exe"
           fi
+          # Create valid artifact name (replace / with -)
+          ARTIFACT_NAME="sshx-build-${GOOS}-${GOARCH}"
+
           # Add flags for smaller binaries
           LDFLAGS="-s -w"
           # Build
@@ -52,11 +55,13 @@ jobs:
           ls -l "$OUTPUT_NAME"
           # Output the filename for the next step
           echo "output_name=$OUTPUT_NAME" >> $GITHUB_OUTPUT
+          # Output the artifact name for the next step
+          echo "artifact_name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
 
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sshx-build-${{ matrix.target }} # Unique name per target
+          name: ${{ steps.build_binary.outputs.artifact_name }} # Use valid name from previous step
           path: ${{ steps.build_binary.outputs.output_name }} # Use output from previous step
           if-no-files-found: error # Error if the build didn't produce the expected file
           retention-days: 1 # Keep artifacts only briefly
