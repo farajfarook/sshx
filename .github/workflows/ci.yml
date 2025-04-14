@@ -22,19 +22,6 @@ jobs:
       with:
         go-version: '1.21' # Match the Go version in your go.mod if different
 
-    # Clean potential leftovers before restoring cache
-    - name: Clean Go module cache directory
-      run: rm -rf ~/go/pkg/mod
-
-    # 3. Cache Go modules to speed up subsequent runs
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-v2 # Bumped to v2
-        restore-keys: |
-          ${{ runner.os }}-go-
-
     # 4. Build the project (optional but good practice)
     - name: Build
       run: go build -v ./...
