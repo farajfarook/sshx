@@ -33,12 +33,31 @@ jobs:
 
       # --- Release Steps Below (only runs if tests above pass) ---
 
-      - name: Build Release Artifacts
-        run: echo "Building release artifacts... (Replace with actual build commands)"
+      - name: Build Release Binaries
+        run: |
+          # Define targets
+          targets=("linux/amd64" "windows/amd64" "darwin/amd64")
+          # Add flags for smaller binaries
+          ldflags="-s -w"
 
-      - name: Create GitHub Release
+          for target in "${targets[@]}"; do
+            # Split target into OS and ARCH
+            IFS='/' read -r goos goarch <<< "$target"
+            # Set output name
+            output_name="sshx-${goos}-${goarch}"
+            if [ "$goos" == "windows" ]; then
+              output_name+=".exe"
+            fi
+            # Build
+            echo "Building $output_name..."
+            env GOOS=$goos GOARCH=$goarch go build -v -ldflags="$ldflags" -o "$output_name" .
+          done
+          # List created files for verification
+          ls -l sshx-*
+
+      - name: Create GitHub Release # This step uses ncipollo/release-action
         id: create_release
-        uses: actions/create-release@v1
+        uses: ncipollo/release-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
