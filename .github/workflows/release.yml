@@ -9,6 +9,9 @@ on:
 
 jobs:
   test-and-build:
+    # Grant permissions necessary for creating releases
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
