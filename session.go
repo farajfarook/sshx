@@ -125,3 +125,79 @@ func ConnectAndRunSession(resolvedConfig *ResolvedConfig, authMethods []ssh.Auth
 
 	return nil
 }
+
+// ConnectAndRunCommand dials the SSH server, runs a single command, and returns the combined output.
+// It handles host key verification using the interactive callback.
+func ConnectAndRunCommand(resolvedConfig *ResolvedConfig, authMethods []ssh.AuthMethod, command string) (string, error) {
+	// Get the initial interactive callback from hostkey.go
+	interactiveCallback, _, err := CreateInteractiveHostKeyCallback()
+	if err != nil {
+		return "", fmt.Errorf("could not create initial host key callback: %w", err)
+	}
+
+	log.Printf("Connecting to %s (%s) as user %s to run command...", resolvedConfig.ServerAddress, resolvedConfig.Hostname, resolvedConfig.User)
+
+	// --- First Dial Attempt ---
+	config := &ssh.ClientConfig{
+		User:            resolvedConfig.User,
+		Auth:            authMethods,
+		HostKeyCallback: interactiveCallback, // Use the interactive callback initially
+		Timeout:         15 * time.Second,
+	}
+
+	var client *ssh.Client // Declare client outside the retry block
+	client, err = ssh.Dial("tcp", resolvedConfig.ServerAddress, config)
+
+	// --- Handle Dial Result (including retry for unknown host) ---
+	if err != nil {
+		var unknownHostErr *ErrUnknownHostKey // Use the type defined in hostkey.go
+		if errors.As(err, &unknownHostErr) {
+			added, promptErr := PromptAndAddHostKey(unknownHostErr)
+			if promptErr != nil {
+				return "", fmt.Errorf("error during host key prompt: %w", promptErr)
+			}
+			if !added {
+				return "", errors.New("connection aborted by user: host key not trusted")
+			}
+
+			// --- Second Dial Attempt ---
+			log.Println("Retrying connection with updated known_hosts...")
+			retryCallback, _, cbErr := CreateInteractiveHostKeyCallback()
+			if cbErr != nil {
+				return "", fmt.Errorf("could not create host key callback for retry: %w", cbErr)
+			}
+			config.HostKeyCallback = retryCallback
+
+			client, err = ssh.Dial("tcp", resolvedConfig.ServerAddress, config)
+			if err != nil {
+				return "", fmt.Errorf("failed to dial %s on retry: %w", resolvedConfig.ServerAddress, err)
+			}
+		} else {
+			return "", fmt.Errorf("failed to dial %s: %w", resolvedConfig.ServerAddress, err)
+		}
+	}
+
+	// --- Connection Successful ---
+	defer client.Close()
+	log.Println("Connected successfully.")
+
+	// --- Create Session and Run Command ---
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("failed to create session: %w", err)
+	}
+	defer session.Close()
+
+	log.Printf("Running remote command: %s", command)
+	// Use CombinedOutput to get stdout and stderr
+	outputBytes, err := session.CombinedOutput(command)
+	if err != nil {
+		// Command potentially failed. Log it, but return the raw error
+		// so the caller can inspect ExitStatus if needed.
+		log.Printf("Remote command finished with error: %v", err)
+		return string(outputBytes), err // Return raw error
+	}
+
+	log.Println("Remote command completed successfully.")
+	return string(outputBytes), nil // Return nil error on exit status 0
+}
