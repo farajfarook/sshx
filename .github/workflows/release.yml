@@ -49,10 +49,6 @@ jobs:
           env GOOS=$GOOS GOARCH=$GOARCH go build -v -ldflags="$LDFLAGS" -o "$OUTPUT_NAME" .
           # List created file
           ls -l "$OUTPUT_NAME"
-        env:
-          # Set environment variables for cross-compilation if needed by build script
-          # GOOS: ${{ matrix.goos }} # Not strictly needed if read from matrix.target
-          # GOARCH: ${{ matrix.goarch }} # Not strictly needed if read from matrix.target
 
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
