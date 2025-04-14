@@ -114,6 +114,3 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           # Allow updates if release already exists (e.g., from a failed run)
           allowUpdates: true
-
-      - name: Output Release URL
-        run: echo "Release URL: TEST" # Temporarily simplified 
