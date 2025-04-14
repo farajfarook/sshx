@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -8,6 +9,8 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/crypto/ssh"
 	// No longer needed: os/user, path/filepath, strings
 	// No longer needed here: net, strconv, errors, ssh, term, ssh_config
 )
@@ -173,21 +176,45 @@ func handleCopyId(args []string, authIdentityFile string) { // Renamed identityF
 		log.Fatalf("Error preparing authentication methods for target '%s': %v", targetArg, err)
 	}
 
-	// 6. & 7. Construct command and run it remotely
-	log.Println("Constructing remote command...")
-	// Ensure the key content is properly quoted for the shell command
-	// Using single quotes around the key content handles most special characters.
-	// If the key itself contains single quotes (highly unlikely), more complex quoting is needed.
-	remoteCommand := fmt.Sprintf("mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '%s' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys", pubKeyContent)
+	// 6a. Check if key already exists
+	log.Println("Checking if key already exists on remote host...")
+	// Use single quotes for outer shell, double quotes for grep pattern to handle potential spaces in pubKeyContent (unlikely but safe)
+	// Use grep -F to treat the pattern as a fixed string, not regex.
+	// Use grep -q to suppress output and just rely on exit status.
+	checkCommand := fmt.Sprintf("grep -q -F -- \"%s\" ~/.ssh/authorized_keys", pubKeyContent)
+	_, checkErr := ConnectAndRunCommand(resolvedConfig, authMethods, checkCommand)
 
-	log.Println("Connecting to remote host to run command...")
-	output, err := ConnectAndRunCommand(resolvedConfig, authMethods, remoteCommand)
+	if checkErr == nil {
+		log.Printf("Public key already exists in ~/.ssh/authorized_keys on %s@%s. Nothing to do.", resolvedConfig.User, resolvedConfig.Hostname)
+		os.Exit(0) // Successful exit, key is present
+	} else {
+		// Check if the error is the specific one indicating grep didn't find the key (Exit status 1)
+		var exitErr *ssh.ExitError
+		if errors.As(checkErr, &exitErr) {
+			if exitErr.ExitStatus() == 1 {
+				log.Println("Key not found on remote host. Proceeding to add it.")
+				// Key not found, this is the expected path, continue below
+			} else {
+				// grep failed for some other reason (e.g., permissions, command not found)
+				log.Fatalf("Error checking for existing key on remote host (exit status %d): %v", exitErr.ExitStatus(), checkErr)
+			}
+		} else {
+			// Some other error occurred during the connection/command execution for the check
+			log.Fatalf("Error checking for existing key on remote host: %v", checkErr)
+		}
+	}
+
+	// 6b. & 7. Construct append command and run it remotely
+	log.Println("Constructing remote command to append key...")
+	// Use single quotes around the key content for the echo command.
+	appendCommand := fmt.Sprintf("mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '%s' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys", pubKeyContent)
+
+	log.Println("Connecting to remote host to append key...")
+	output, err := ConnectAndRunCommand(resolvedConfig, authMethods, appendCommand)
 
 	// 8. Report success/failure
 	if err != nil {
-		// ConnectAndRunCommand already logs details
-		// Output might contain useful error details from the server
-		fmt.Fprintf(os.Stderr, "\nError running remote command: %v\n", err)
+		fmt.Fprintf(os.Stderr, "\nError running remote command to append key: %v\n", err)
 		if output != "" {
 			fmt.Fprintf(os.Stderr, "Remote output on error:\n%s\n", output)
 		}
@@ -195,9 +222,4 @@ func handleCopyId(args []string, authIdentityFile string) { // Renamed identityF
 	}
 
 	log.Printf("Successfully copied public key to %s@%s.", resolvedConfig.User, resolvedConfig.Hostname)
-	// Optional: Print remote output even on success?
-	// if output != "" {
-	// 	fmt.Printf("Remote output:\n%s\n", output)
-	// }
-
 }
