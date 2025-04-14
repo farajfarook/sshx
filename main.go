@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/user"
@@ -17,14 +18,25 @@ import (
 
 // NOTE: expandTilde moved to config.go
 
+var verbose bool // Global flag for verbose logging
+
 func main() {
 	// --- Top-level flags (e.g., -i for identity file, usable by multiple subcommands) ---
 	// We parse flags first to make them available before deciding the subcommand.
 	// Note: Flags defined here won't be automatically available to subcommands if we use flag.NewFlagSet later.
 	// This structure might need adjustment if subcommands need complex shared flags, or use a CLI library.
 	identityFilePathFlag := flag.String("i", "", "Path to the private key file (for connection auth or key to copy if applicable)")
-	// It's important to parse *before* checking os.Args for subcommands
+	verboseFlag := flag.Bool("v", false, "Enable verbose logging")
+
 	flag.Parse()
+	verbose = *verboseFlag // Set the global variable
+
+	// Configure logger based on verbosity
+	if !verbose {
+		log.SetOutput(io.Discard) // Discard log output if not verbose
+	} else {
+		log.SetFlags(log.LstdFlags | log.Lshortfile) // Include file/line in verbose logs
+	}
 
 	// --- Subcommand Dispatching ---
 	args := flag.Args() // Get non-flag arguments
@@ -67,12 +79,19 @@ func printUsage() {
 
 // handleConnect contains the original logic for the interactive session.
 func handleConnect(args []string, identityFile string) {
-	if len(args) != 1 {
-		log.Printf("Error: 'connect' requires exactly one argument: <host_alias | user@host[:port]>\n")
+	// Args should contain the target and optionally the command to run
+	if len(args) == 0 {
+		log.Println("Error: 'connect' requires at least one argument: <host_alias | user@host[:port]> [command...]")
 		printUsage()
 		os.Exit(1)
 	}
 	targetArg := args[0]
+	remoteCommandArgs := args[1:] // Remaining args form the command
+	remoteCommand := ""           // Default to interactive session
+	if len(remoteCommandArgs) > 0 {
+		remoteCommand = strings.Join(remoteCommandArgs, " ")
+		log.Printf("Remote command specified: %s", remoteCommand)
+	}
 
 	// --- Resolve connection parameters ---
 	resolvedConfig, err := ResolveConnectionConfig(targetArg, identityFile)
@@ -86,10 +105,27 @@ func handleConnect(args []string, identityFile string) {
 		log.Fatalf("Error preparing authentication methods: %v", err)
 	}
 
-	// --- Connect and run the interactive session ---
-	err = ConnectAndRunSession(resolvedConfig, authMethods)
-	if err != nil {
-		log.Fatalf("Error during SSH connection or session: %v", err)
+	// --- Connect and run based on whether a command was provided ---
+	if remoteCommand == "" {
+		// Interactive session
+		log.Println("Starting interactive session...")
+		err = ConnectAndRunSession(resolvedConfig, authMethods)
+		if err != nil {
+			log.Fatalf("Error during SSH connection or interactive session: %v", err)
+		}
+	} else {
+		// Run remote command
+		log.Printf("Running remote command: %s", remoteCommand)
+		output, err := ConnectAndRunCommand(resolvedConfig, authMethods, remoteCommand)
+		if err != nil {
+			// Print command output (stderr or stdout) even on error
+			if output != "" {
+				fmt.Fprint(os.Stderr, output) // Use Stderr for errors/output on failure
+			}
+			log.Fatalf("Error running remote command: %v", err)
+		}
+		// Print command output (stdout/stderr combined) on success
+		fmt.Print(output)
 	}
 
 	log.Println("SSH client finished.")

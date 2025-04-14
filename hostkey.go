@@ -40,26 +40,43 @@ func fingerprintSHA256(key ssh.PublicKey) string {
 // createKnownHostsCallback creates the standard strict host key callback.
 // It returns the callback, the path to the known_hosts file, and any error encountered.
 func createKnownHostsCallback() (ssh.HostKeyCallback, string, error) {
-	currentUser, err := user.Current()
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get current user for known_hosts path: %w", err)
+	var knownHostsPath string
+	// Check environment variable first
+	envPath := os.Getenv("SSH_KNOWN_HOSTS")
+	if envPath != "" {
+		knownHostsPath = envPath
+		log.Printf("Using known_hosts path from environment variable SSH_KNOWN_HOSTS: %s", knownHostsPath)
+	} else {
+		// Fall back to default path
+		currentUser, err := user.Current()
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get current user for known_hosts path: %w", err)
+		}
+		knownHostsPath = filepath.Join(currentUser.HomeDir, ".ssh", "known_hosts")
 	}
-	knownHostsPath := filepath.Join(currentUser.HomeDir, ".ssh", "known_hosts")
 
+	// Ensure the directory exists if we need to create the file later
 	sshDir := filepath.Dir(knownHostsPath)
 	if _, err := os.Stat(sshDir); os.IsNotExist(err) {
-		log.Printf("Creating SSH directory: %s", sshDir)
+		log.Printf("Creating directory for known_hosts: %s", sshDir)
 		if err := os.MkdirAll(sshDir, 0700); err != nil {
-			return nil, "", fmt.Errorf("failed to create ssh directory %s: %w", sshDir, err)
+			return nil, knownHostsPath, fmt.Errorf("failed to create directory %s for known_hosts: %w", sshDir, err)
 		}
+	} else if err != nil {
+		// Handle potential errors checking the directory stat other than NotExist
+		return nil, knownHostsPath, fmt.Errorf("failed to stat directory %s for known_hosts: %w", sshDir, err)
 	}
 
+	// Attempt to load the known_hosts file. It might not exist yet, which is okay for knownhosts.New
+	// as long as the directory exists.
 	hostKeyCallback, err := knownhosts.New(knownHostsPath)
 	if err != nil {
-		return nil, knownHostsPath, fmt.Errorf("failed to load known_hosts file '%s': %w", knownHostsPath, err)
+		// knownhosts.New can fail if the file exists but has bad permissions or format.
+		// If it doesn't exist, it shouldn't fail here.
+		return nil, knownHostsPath, fmt.Errorf("failed to initialize known_hosts mechanism with path '%s': %w", knownHostsPath, err)
 	}
 
-	log.Printf("Using known_hosts file: %s", knownHostsPath)
+	log.Printf("Using known_hosts file: %s", knownHostsPath) // Log the final path being used
 	return hostKeyCallback, knownHostsPath, nil
 }
 
