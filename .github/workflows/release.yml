@@ -1,9 +1,11 @@
 # .github/workflows/release.yml
 
-name: Release Build and Upload
+name: Build, Test, and Release
 
 on:
   push:
+    branches:
+      - main  # Trigger on pushes to the main branch
     tags:
       - 'v*.*.*'      # Trigger on standard tags like v1.0.0
       - 'v*.*.*-*'    # Trigger on pre-release tags like v1.0.0-beta.1
@@ -13,7 +15,7 @@ permissions:
 
 jobs:
   build:
-    name: Build for ${{ matrix.goos }}/${{ matrix.goarch }}
+    name: Build & Test for ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -35,6 +37,9 @@ jobs:
         with:
           go-version: '1.21' # Specify your Go version, ideally match go.mod
 
+      - name: Run unit tests
+        run: go test -v ./...
+
       - name: Build sshx binary
         env:
           GOOS: ${{ matrix.goos }}
@@ -50,6 +55,8 @@ jobs:
           ls -l # Verify file exists
 
       - name: Upload artifact
+        # Artifacts will be uploaded for branch pushes too,
+        # useful for testing/debugging builds, but won't be released.
         uses: actions/upload-artifact@v4
         with:
           name: sshx-build-${{ matrix.goos }}-${{ matrix.goarch }} # Keep unique artifact name per build
@@ -58,6 +65,8 @@ jobs:
           retention-days: 1 # Keep artifacts for 1 day
 
   release:
+    # Add condition to only run this job for tag pushes
+    if: startsWith(github.ref, 'refs/tags/')
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: build # Run after all builds are finished
