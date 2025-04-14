@@ -5,23 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
-	"path/filepath"
-	"strings"
+	// No longer needed: os/user, path/filepath, strings
 	// No longer needed here: net, strconv, errors, ssh, term, ssh_config
 )
 
-// Helper function to expand tilde (~) - kept in main for now
-func expandTilde(path string) (string, error) {
-	if !strings.HasPrefix(path, "~") {
-		return path, nil
-	}
-	currentUser, err := user.Current()
-	if err != nil {
-		return "", fmt.Errorf("failed to get current user for tilde expansion: %w", err)
-	}
-	return filepath.Join(currentUser.HomeDir, path[1:]), nil
-}
+// NOTE: expandTilde moved to config.go
 
 func main() {
 	// --- Define and parse command line flags ---

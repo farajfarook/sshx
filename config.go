@@ -24,6 +24,18 @@ type ResolvedConfig struct {
 	TargetArg     string // Original target argument for logging
 }
 
+// expandTilde helper function
+func expandTilde(path string) (string, error) {
+	if !strings.HasPrefix(path, "~") {
+		return path, nil
+	}
+	currentUser, err := user.Current()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current user for tilde expansion: %w", err)
+	}
+	return filepath.Join(currentUser.HomeDir, path[1:]), nil
+}
+
 // loadSshConfig loads and parses the ~/.ssh/config file.
 func loadSshConfig() (*ssh_config.Config, error) {
 	currentUser, err := user.Current()
