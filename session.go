@@ -4,28 +4,72 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/user"
+	"path/filepath"
+	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 	"golang.org/x/term"
 )
 
+// createKnownHostsCallback creates a HostKeyCallback function using the default known_hosts file.
+func createKnownHostsCallback() (ssh.HostKeyCallback, error) {
+	currentUser, err := user.Current()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current user for known_hosts path: %w", err)
+	}
+	knownHostsPath := filepath.Join(currentUser.HomeDir, ".ssh", "known_hosts")
+
+	// knownhosts.New also handles file creation if it doesn't exist, but
+	// standard behavior is usually to error if the file can't be read.
+	// Let's try creating it with default permissions if it's missing first.
+	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
+		log.Printf("Warning: known_hosts file not found at %s. Attempting to create.", knownHostsPath)
+		file, createErr := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_WRONLY, 0600)
+		if createErr != nil {
+			return nil, fmt.Errorf("failed to create known_hosts file at %s: %w", knownHostsPath, createErr)
+		}
+		file.Close() // Close the empty file immediately
+		log.Printf("Created empty known_hosts file. Please populate it (e.g., using standard ssh or ssh-keyscan).")
+		// Even if created, knownhosts.New might fail if directory permissions are bad,
+		// but it handles the 'file not found' aspect internally if we let it.
+	}
+
+	hostKeyCallback, err := knownhosts.New(knownHostsPath)
+	if err != nil {
+		// This catches errors reading the file (permissions etc.)
+		return nil, fmt.Errorf("failed to load known_hosts file '%s': %w", knownHostsPath, err)
+	}
+
+	// Optional: Log successful loading
+	log.Printf("Loaded known_hosts file from %s", knownHostsPath)
+	return hostKeyCallback, nil
+}
+
 // ConnectAndRunSession dials the SSH server, sets up the interactive session, and waits for it to complete.
 func ConnectAndRunSession(resolvedConfig *ResolvedConfig, authMethods []ssh.AuthMethod) error {
+	// Create the host key callback
+	hostKeyCallback, err := createKnownHostsCallback()
+	if err != nil {
+		// If we can't establish a trust mechanism, it's a fatal error for secure connection.
+		return fmt.Errorf("could not create host key callback: %w", err)
+	}
+
 	log.Printf("Connecting to %s (%s) as user %s...", resolvedConfig.ServerAddress, resolvedConfig.Hostname, resolvedConfig.User)
 
-	// Configure SSH client
-	// NOTE: HostKeyCallback is still insecure!
+	// Configure SSH client with secure host key verification
 	config := &ssh.ClientConfig{
 		User:            resolvedConfig.User,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Replace with secure callback later
-		// Consider adding a timeout: Timeout: 15 * time.Second,
+		HostKeyCallback: hostKeyCallback,  // Use the known_hosts callback
+		Timeout:         15 * time.Second, // Added a connection timeout
 	}
 
 	// Dial the server
 	client, err := ssh.Dial("tcp", resolvedConfig.ServerAddress, config)
 	if err != nil {
-		// Error here likely includes authentication failures
+		// Error here will include host key verification failures
 		return fmt.Errorf("failed to dial %s: %w", resolvedConfig.ServerAddress, err)
 	}
 	defer client.Close()
