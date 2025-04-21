@@ -58,6 +58,9 @@ func main() {
 	case "connect": // Optional: Add explicit 'connect' subcommand
 		// Handle interactive connection (existing logic)
 		handleConnect(subcommandArgs, *identityFilePathFlag)
+	case "keygen": // Add keygen command
+		// Call the function to handle keygen
+		handleKeygen(subcommandArgs)
 	default:
 		// Treat the first argument as the target for the default 'connect' action
 		handleConnect(args, *identityFilePathFlag) // Pass all args including the 'subcommand' which is actually the target
@@ -74,6 +77,8 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "            Usage: %s connect [-i key] <host_alias | user@host[:port]>\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  copy-id   Copy a public key to a remote host's authorized_keys file.\n")
 	fmt.Fprintf(os.Stderr, "            Usage: %s copy-id [-i pubkey] <host_alias | user@host[:port]>\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "  keygen    Generate a new SSH key pair.\n")                                                            // Add keygen description
+	fmt.Fprintf(os.Stderr, "            Usage: %s keygen [-t type] [-b bits] [-f file] [-N passphrase] [-C comment]\n", os.Args[0]) // Add keygen usage
 	// Add more subcommands here
 }
 

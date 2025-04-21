@@ -24,8 +24,8 @@ type ResolvedConfig struct {
 	TargetArg     string // Original target argument for logging
 }
 
-// expandTilde helper function
-func expandTilde(path string) (string, error) {
+// ExpandTilde resolves paths like "~/.ssh/config" relative to the current user's home directory.
+func ExpandTilde(path string) (string, error) {
 	if !strings.HasPrefix(path, "~") {
 		return path, nil
 	}
@@ -147,7 +147,7 @@ func ResolveConnectionConfig(targetArg string, identityFilePathFlag string) (*Re
 		finalKeyPath = "~/.ssh/id_rsa"
 	}
 
-	expandedKeyPath, err := expandTilde(finalKeyPath)
+	expandedKeyPath, err := ExpandTilde(finalKeyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand tilde in key path '%s': %w", finalKeyPath, err)
 	}

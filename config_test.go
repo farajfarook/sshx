@@ -32,13 +32,13 @@ func TestExpandTilde(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := expandTilde(tt.input)
+			got, err := ExpandTilde(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("expandTilde() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ExpandTilde() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if got != tt.expected {
-				t.Errorf("expandTilde() got = %v, want %v", got, tt.expected)
+				t.Errorf("ExpandTilde() got = %v, want %v", got, tt.expected)
 			}
 		})
 	}
