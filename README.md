@@ -78,6 +78,28 @@ Copy Process:
 *   Checks if the key already exists in `~/.ssh/authorized_keys` on the remote host.
 *   If the key doesn't exist, it appends the public key content and sets appropriate file permissions.
 
+### Generating Keys (`keygen`)
+
+The `keygen` subcommand generates a new SSH private/public key pair.
+
+```bash
+# Generate a default ed25519 key (~/.ssh/id_ed25519 and .pub)
+./sshx keygen
+
+# Generate an RSA key with 4096 bits and a custom comment
+./sshx keygen -t rsa -b 4096 -C "My RSA Key for work"
+
+# Generate an ed25519 key, specifying the output file and a passphrase
+./sshx keygen -t ed25519 -f /path/to/my_ssh_key -N "mysecretpassphrase"
+```
+
+Options:
+*   `-t <type>`: Specifies the type of key to create (supported: `rsa`, `ed25519`). Default: `ed25519`.
+*   `-b <bits>`: For RSA keys, specifies the number of bits (e.g., `2048`, `4096`). Default: `4096`.
+*   `-f <file>`: Specifies the output filename for the private key. The public key will be saved with `.pub` appended. Default: `~/.ssh/id_<type>`.
+*   `-N <passphrase>`: Provides a passphrase to encrypt the private key.
+*   `-C <comment>`: Provides a comment string to be added to the public key file.
+
 ## Automated Releases
 
 This repository uses GitHub Actions to build binaries for Linux (amd64), macOS (amd64), and Windows (amd64) whenever a Git tag matching `v*.*.*` or `v*.*.*-*` (for pre-releases) is pushed. These binaries (`sshx-os-arch` or `sshx-windows-amd64.exe`) are automatically attached to a GitHub Release corresponding to the tag.
