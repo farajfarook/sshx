@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -52,7 +53,7 @@ func TestResolveConnectionConfig_UserHostFormat(t *testing.T) {
 	// Set a fake home dir for default key path testing
 	// Note: This relies on expandTilde working correctly.
 	currentUser, _ := user.Current() // Get current user for home dir default path
-	defaultKeyPath := filepath.Join(currentUser.HomeDir, ".ssh", "id_rsa")
+	// No longer relying on defaultKeyPath, provide explicit paths in tests
 
 	tests := []struct {
 		name           string
@@ -68,22 +69,22 @@ func TestResolveConnectionConfig_UserHostFormat(t *testing.T) {
 		{
 			name:           "Simple user@host",
 			targetArg:      "testuser@example.com",
-			identityFlag:   "",
+			identityFlag:   "~/.ssh/dummy_key_simple", // Provide explicit dummy path
 			wantHostname:   "example.com",
 			wantUser:       "testuser",
 			wantPort:       "22",
-			wantKeyPath:    defaultKeyPath,
+			wantKeyPath:    filepath.Join(currentUser.HomeDir, ".ssh", "dummy_key_simple"), // Expect expanded dummy path
 			wantServerAddr: "example.com:22",
 			wantErr:        false,
 		},
 		{
 			name:           "user@host with port",
 			targetArg:      "admin@192.168.1.1:2222",
-			identityFlag:   "",
+			identityFlag:   "~/.ssh/dummy_key_port", // Provide explicit dummy path
 			wantHostname:   "192.168.1.1",
 			wantUser:       "admin",
 			wantPort:       "2222",
-			wantKeyPath:    defaultKeyPath,
+			wantKeyPath:    filepath.Join(currentUser.HomeDir, ".ssh", "dummy_key_port"), // Expect expanded dummy path
 			wantServerAddr: "192.168.1.1:2222",
 			wantErr:        false,
 		},
@@ -173,6 +174,132 @@ func TestResolveConnectionConfig_UserHostFormat(t *testing.T) {
 			}
 			if got.IsAlias == true {
 				t.Errorf("ResolveConnectionConfig() IsAlias got = true, want false for user@host format")
+			}
+		})
+	}
+}
+
+// TestResolveConnectionConfig_DefaultKeyResolution tests the logic for finding default identity files.
+func TestResolveConnectionConfig_DefaultKeyResolution(t *testing.T) {
+	// Store original getUserCurrentFunc and replace it with a mock
+	originalUserCurrentFunc := getUserCurrentFunc
+	defer func() { getUserCurrentFunc = originalUserCurrentFunc }()
+
+	tempDir := t.TempDir()
+	fakeHomeDir := tempDir
+	fakeSshDir := filepath.Join(fakeHomeDir, ".ssh")
+	if err := os.MkdirAll(fakeSshDir, 0700); err != nil {
+		t.Fatalf("Failed to create fake .ssh directory: %v", err)
+	}
+
+	// Mock getUserCurrentFunc to return our fake home directory
+	getUserCurrentFunc = func() (*user.User, error) {
+		// Return a minimal user struct with the HomeDir set
+		return &user.User{
+			Uid:      "1000",
+			Gid:      "1000",
+			Username: "testuser",
+			Name:     "Test User",
+			HomeDir:  fakeHomeDir,
+		}, nil
+	}
+
+	tests := []struct {
+		name             string
+		keysToCreate     []string // Basenames like "id_ed25519"
+		wantKeyPath      string   // Expected path *with* tilde, e.g., "~/.ssh/id_ed25519"
+		wantExpandedPath string   // Expected fully resolved path, or empty if none found
+	}{
+		{
+			name:             "No keys exist",
+			keysToCreate:     []string{},
+			wantKeyPath:      "",
+			wantExpandedPath: "",
+		},
+		{
+			name:             "Only id_rsa exists",
+			keysToCreate:     []string{"id_rsa"},
+			wantKeyPath:      "~/.ssh/id_rsa",
+			wantExpandedPath: filepath.Join(fakeSshDir, "id_rsa"),
+		},
+		{
+			name:             "Only id_ecdsa exists",
+			keysToCreate:     []string{"id_ecdsa"},
+			wantKeyPath:      "~/.ssh/id_ecdsa",
+			wantExpandedPath: filepath.Join(fakeSshDir, "id_ecdsa"),
+		},
+		{
+			name:             "Only id_ed25519 exists",
+			keysToCreate:     []string{"id_ed25519"},
+			wantKeyPath:      "~/.ssh/id_ed25519",
+			wantExpandedPath: filepath.Join(fakeSshDir, "id_ed25519"),
+		},
+		{
+			name:             "ed25519 and rsa exist",
+			keysToCreate:     []string{"id_rsa", "id_ed25519"},
+			wantKeyPath:      "~/.ssh/id_ed25519", // ed25519 preferred
+			wantExpandedPath: filepath.Join(fakeSshDir, "id_ed25519"),
+		},
+		{
+			name:             "ecdsa and rsa exist",
+			keysToCreate:     []string{"id_rsa", "id_ecdsa"},
+			wantKeyPath:      "~/.ssh/id_ecdsa", // ecdsa preferred over rsa
+			wantExpandedPath: filepath.Join(fakeSshDir, "id_ecdsa"),
+		},
+		{
+			name:             "all keys exist",
+			keysToCreate:     []string{"id_rsa", "id_ecdsa", "id_ed25519"},
+			wantKeyPath:      "~/.ssh/id_ed25519", // ed25519 preferred
+			wantExpandedPath: filepath.Join(fakeSshDir, "id_ed25519"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clean up and create keys for this specific test case
+			// Note: TempDir cleans itself, but we need to manage files *within* it per test.
+			// A simpler way is to create a *new* temp subdir for each test run.
+			testSshDir := filepath.Join(t.TempDir(), ".ssh")
+			if err := os.MkdirAll(testSshDir, 0700); err != nil {
+				t.Fatalf("Failed to create test-specific .ssh dir: %v", err)
+			}
+			// Update mock to use this test's specific home dir
+			currentUserHomeDir := filepath.Dir(testSshDir)
+			getUserCurrentFunc = func() (*user.User, error) {
+				return &user.User{HomeDir: currentUserHomeDir}, nil
+			}
+
+			expectedExpandedPath := ""
+			for _, keyName := range tt.keysToCreate {
+				keyPath := filepath.Join(testSshDir, keyName)
+				if err := os.WriteFile(keyPath, []byte("dummy"), 0600); err != nil {
+					t.Fatalf("Failed to write dummy key %s: %v", keyPath, err)
+				}
+				// Determine the expected expanded path based on the wanted key
+				if tt.wantKeyPath == "~/.ssh/"+keyName {
+					expectedExpandedPath = keyPath
+				}
+			}
+			// If wantKeyPath is empty, expectedExpandedPath should also be empty
+			if tt.wantKeyPath == "" {
+				expectedExpandedPath = ""
+			}
+
+			// Call the function under test with no identity flag
+			// Use a simple alias target, assuming alias config is empty/doesn't specify IdentityFile
+			got, err := ResolveConnectionConfig("somehost", "")
+
+			if err != nil {
+				t.Errorf("ResolveConnectionConfig() unexpected error = %v", err)
+				return
+			}
+			if got == nil {
+				t.Fatalf("ResolveConnectionConfig() returned nil, expected valid config")
+			}
+
+			// Check the final KeyPath (which should be the expanded path)
+			if got.KeyPath != expectedExpandedPath {
+				t.Errorf("ResolveConnectionConfig() KeyPath got = \"%s\", want \"%s\"", got.KeyPath, expectedExpandedPath)
 			}
 		})
 	}

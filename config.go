@@ -13,6 +13,9 @@ import (
 	"github.com/kevinburke/ssh_config"
 )
 
+// getUserCurrentFunc allows mocking user.Current in tests
+var getUserCurrentFunc = user.Current
+
 // ResolvedConfig holds the final parameters needed for an SSH connection.
 type ResolvedConfig struct {
 	Hostname      string
@@ -29,7 +32,7 @@ func ExpandTilde(path string) (string, error) {
 	if !strings.HasPrefix(path, "~") {
 		return path, nil
 	}
-	currentUser, err := user.Current()
+	currentUser, err := getUserCurrentFunc()
 	if err != nil {
 		return "", fmt.Errorf("failed to get current user for tilde expansion: %w", err)
 	}
@@ -38,7 +41,7 @@ func ExpandTilde(path string) (string, error) {
 
 // loadSshConfig loads and parses the ~/.ssh/config file.
 func loadSshConfig() (*ssh_config.Config, error) {
-	currentUser, err := user.Current()
+	currentUser, err := getUserCurrentFunc()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current user: %w", err)
 	}
@@ -68,7 +71,7 @@ func ResolveConnectionConfig(targetArg string, identityFilePathFlag string) (*Re
 		return nil, err
 	}
 
-	currentUser, err := user.Current()
+	currentUser, err := getUserCurrentFunc()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current user: %w", err)
 	}
@@ -139,19 +142,52 @@ func ResolveConnectionConfig(targetArg string, identityFilePathFlag string) (*Re
 	res.Port = portStr
 	res.ServerAddress = net.JoinHostPort(res.Hostname, res.Port)
 
+	// Determine the key path: prioritize flag, then config, then defaults
 	finalKeyPath := identityFilePathFlag
 	if finalKeyPath == "" {
 		finalKeyPath = keyPathFromConfig
 	}
+
+	// If still no key path, check default locations in preferred order
 	if finalKeyPath == "" {
-		finalKeyPath = "~/.ssh/id_rsa"
+		log.Println("No identity file specified via flag or config, checking defaults...")
+		defaultKeyFiles := []string{
+			"~/.ssh/id_ed25519",
+			"~/.ssh/id_ecdsa",
+			"~/.ssh/id_rsa",
+		}
+		for _, defaultPath := range defaultKeyFiles {
+			expandedDefaultPath, err := ExpandTilde(defaultPath)
+			if err != nil {
+				log.Printf("Warning: could not expand tilde for default key path %s: %v", defaultPath, err)
+				continue // Try next default
+			}
+			if _, err := os.Stat(expandedDefaultPath); err == nil {
+				log.Printf("Found default identity file: %s", expandedDefaultPath)
+				finalKeyPath = defaultPath // Use the path with the tilde for ExpandTilde below
+				break
+			} else if !os.IsNotExist(err) {
+				// Log unexpected errors checking default key, but continue (might not have permission)
+				log.Printf("Warning: error checking default key file %s: %v", expandedDefaultPath, err)
+			}
+		}
 	}
 
-	expandedKeyPath, err := ExpandTilde(finalKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to expand tilde in key path '%s': %w", finalKeyPath, err)
+	// If still no key path after checking defaults, log and proceed (will likely fallback to password)
+	if finalKeyPath == "" {
+		log.Println("No identity file specified or found in default locations. Authentication might require password.")
+		// Set KeyPath to empty string; PrepareAuthMethods handles this
+		res.KeyPath = ""
+	} else {
+		// Expand the final chosen path (could be from flag, config, or default)
+		expandedKeyPath, err := ExpandTilde(finalKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand tilde in key path '%s': %w", finalKeyPath, err)
+		}
+		res.KeyPath = expandedKeyPath
 	}
-	res.KeyPath = expandedKeyPath
+
+	log.Printf("Resolved connection parameters: User=%s, Host=%s, Port=%s, KeyPath='%s'", res.User, res.Hostname, res.Port, res.KeyPath) // Added KeyPath to log
 
 	return &res, nil
 }
